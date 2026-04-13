@@ -135,31 +135,64 @@ class MultimodalEncoder(nn.Module):
     """
     Fuses: raw time-series + covariates + event embeddings + optional
     text embeddings (passed in as pre-computed tensors).
+
+    Supports arbitrary number of input channels (multivariate) and
+    an arbitrary number of covariate channels appended to the input.
+    Events are injected as learned per-timestep additive biases.
     """
+    # Named events known at init time — extendable at runtime via register_event()
+    BUILTIN_EVENTS = [
+        "none", "holiday", "black_friday", "rate_hike", "rate_cut",
+        "storm", "supply_shock", "demand_spike", "promotion", "outage",
+    ]
+
     def __init__(self, cfg: ModelConfig):
         super().__init__()
         total_in = cfg.input_dim + cfg.covariate_dim
-        self.ts_proj   = nn.Linear(total_in, cfg.model_dim)
-        self.event_emb = nn.Embedding(512, cfg.event_embed_dim)
-        self.event_proj= nn.Linear(cfg.event_embed_dim, cfg.model_dim)
-        self.time_feat = nn.Linear(4, cfg.model_dim)   # hour, dow, doy, month
-        self.dropout   = nn.Dropout(cfg.dropout)
+        self.ts_proj    = nn.Linear(total_in, cfg.model_dim)
+        self.event_emb  = nn.Embedding(512, cfg.event_embed_dim, padding_idx=0)
+        self.event_proj = nn.Linear(cfg.event_embed_dim, cfg.model_dim)
+        self.time_feat  = nn.Linear(4, cfg.model_dim)   # hour, dow, doy, month
+        self.text_proj  = nn.Linear(cfg.model_dim, cfg.model_dim)
+        self.norm       = nn.LayerNorm(cfg.model_dim)
+        self.dropout    = nn.Dropout(cfg.dropout)
+
+        # Map event name → embedding index
+        self.event_vocab: dict[str, int] = {
+            name: i for i, name in enumerate(self.BUILTIN_EVENTS)
+        }
+
+    def register_event(self, name: str) -> int:
+        """Register a new event type and return its index."""
+        if name not in self.event_vocab:
+            idx = len(self.event_vocab)
+            self.event_vocab[name] = idx
+        return self.event_vocab[name]
+
+    def event_name_to_id(self, name: str) -> int:
+        return self.event_vocab.get(name.lower().replace(" ", "_"), 0)
 
     def forward(
         self,
-        ts: torch.Tensor,                          # (B, T, input_dim+cov)
+        ts: torch.Tensor,                               # (B, T, input_dim + covariate_dim)
         time_features: Optional[torch.Tensor] = None,  # (B, T, 4)
-        event_ids: Optional[torch.Tensor] = None,      # (B, T) int
-        text_emb: Optional[torch.Tensor] = None,       # (B, D) global
+        event_ids: Optional[torch.Tensor] = None,      # (B, T) int ids
+        text_emb: Optional[torch.Tensor] = None,       # (B, model_dim) pre-computed
     ) -> torch.Tensor:
-        x = self.ts_proj(ts)
+        x = self.ts_proj(ts)                            # (B, T, D)
+
         if time_features is not None:
             x = x + self.time_feat(time_features)
+
         if event_ids is not None:
-            x = x + self.event_proj(self.event_emb(event_ids))
+            e = self.event_emb(event_ids)               # (B, T, event_embed_dim)
+            x = x + self.event_proj(e)
+
         if text_emb is not None:
-            x = x + text_emb.unsqueeze(1).expand_as(x) * 0.1
-        return self.dropout(x)
+            # Global conditioning: broadcast across time axis
+            x = x + self.text_proj(text_emb).unsqueeze(1) * 0.15
+
+        return self.dropout(self.norm(x))
 
 
 # ---------------------------------------------------------------------------
@@ -256,6 +289,13 @@ class ChronaModel(nn.Module):
             x = block(x)
         h = self.pool_norm(x[:, -1])   # take last token
         return self.head(h)
+
+    def event_name_to_id(self, name: str) -> int:
+        """Convenience passthrough to the encoder's vocabulary."""
+        return self.encoder.event_name_to_id(name)
+
+    def register_event(self, name: str) -> int:
+        return self.encoder.register_event(name)
 
     @classmethod
     def small(cls):
