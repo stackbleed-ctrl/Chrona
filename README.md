@@ -184,6 +184,6 @@ Apache 2.0 — free for research and commercial use.
 @software{chrona2025,
   title  = {Chrona: Multimodal Probabilistic Time-Series Foundation Model},
   year   = {2025},
-  url    = {https://github.com/chrona-ai/chrona}
+  url    = { https://github.com/stackbleed-ctrl/Chrona }
 }
 ```
