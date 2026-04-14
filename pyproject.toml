@@ -1,0 +1,79 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "chrona"
+version = "1.0.0"
+description = "Chrona — Multimodal Probabilistic Time-Series Foundation Model"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Chrona Research" }]
+requires-python = ">=3.10"
+keywords = ["time-series", "forecasting", "foundation-model", "transformer", "mamba", "probabilistic"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "torch>=2.2.0",
+  "numpy>=1.24",
+  "pandas>=2.0",
+  "scikit-learn>=1.3",
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "pydantic>=2.0",
+  "requests>=2.31",
+  "huggingface-hub>=0.21",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "httpx>=0.27",
+  "black",
+  "ruff",
+  "mypy",
+]
+onnx = [
+  "onnx>=1.16",
+  "onnxruntime-gpu>=1.17",
+  "onnxsim>=0.4",
+]
+viz = [
+  "plotly>=5.20",
+  "matplotlib>=3.8",
+]
+all = ["chrona[dev,onnx,viz]"]
+
+[project.scripts]
+chrona-server = "chrona.api.main:app"
+chrona-train  = "chrona.training.train:main"
+
+[project.urls]
+Homepage    = "https://chrona.ai"
+Repository  = "https://github.com/chrona-ai/chrona"
+Docs        = "https://docs.chrona.ai"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/chrona"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "N", "W"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
